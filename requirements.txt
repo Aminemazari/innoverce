@@ -1,0 +1,9 @@
+Flask
+ultralytics
+opencv-python
+numpy
+joblib
+psycopg2-binary
+cloudinary
+python-dotenv
+Pillow
