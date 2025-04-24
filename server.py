@@ -17,10 +17,6 @@ load_dotenv()
 
 # Flask app setup
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['OUTPUT_FOLDER'] = 'outputs'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
 # Cloudinary config
 cloudinary.config(
@@ -45,7 +41,7 @@ def get_db_connection():
 
 # Load YOLO model
 try:
-    yolo_model = YOLO('yolov8n.pt')  # Adjust path/model as needed
+    yolo_model = YOLO('models/yolov8n.pt')  # Adjust path/model as needed
 except Exception as e:
     raise Exception(f"Model loading failed: {str(e)}")
 
@@ -74,10 +70,7 @@ def count_vehicles(image, model):
 # Calculate green light time Tg
 def calculate_tg(n_cars, Tb, k, n_avr):
     base_time = Tb + k * (n_cars - n_avr)
-    if n_cars >= 2 * n_avr:
-        Tg = 0.7 * base_time
-    else:
-        Tg = base_time
+    Tg = 0.7 * base_time if n_cars >= 2 * n_avr else base_time
     return {
         'Tg': round(Tg, 2),
         'Tb': Tb,
@@ -109,32 +102,30 @@ def itss_traffic():
             except Exception as e:
                 return jsonify({'error': str(e)}), 400
         else:
-            image_path = 'traffic.jpg'
-            if not os.path.exists(image_path):
-                return jsonify({'error': 'No URL provided and fallback traffic.jpg not found'}), 400
-            image = cv2.imread(image_path)
-            image_source = "fallback"
+            return jsonify({'error': 'No image URL provided'}), 400
 
         if image is None:
             return jsonify({'error': 'Failed to process image'}), 400
 
-        # Count vehicles and calculate green light time
         n_cars, results = count_vehicles(image, yolo_model)
         output = calculate_tg(n_cars, Tb, k, n_avr)
 
-        # Annotate and save the image
-        save_path = os.path.join(app.config['OUTPUT_FOLDER'], 'annotated_traffic.jpg')
+        # Annotate image
         annotated = results.plot()
         cv2.putText(annotated, f'Vehicles detected: {n_cars}', (30, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 0), 3)
-        cv2.imwrite(save_path, annotated)
 
-        # Upload annotated image to Cloudinary
+        # Convert annotated image to memory buffer for Cloudinary upload
+        _, buffer = cv2.imencode('.jpg', annotated)
+        encoded_image = BytesIO(buffer.tobytes())
+
         try:
             upload_result = cloudinary.uploader.upload(
-                save_path,
+                encoded_image,
                 folder="smart_mobility/itss",
-                resource_type="image"
+                resource_type="image",
+                public_id=None,
+                overwrite=True
             )
             cloudinary_url = upload_result['secure_url']
         except Exception as e:
@@ -145,12 +136,11 @@ def itss_traffic():
             'source': image_source,
             'result': output,
             'image_url': image_url,
-            'annotated_image': cloudinary_url if cloudinary_url else save_path
+            'annotated_image': cloudinary_url
         }), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Run the Flask app
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
