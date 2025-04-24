@@ -1,11 +1,11 @@
 "use client";
 
-
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import tramData from '../components/tram_segmentstwo.json'; // Your Overpass result
+import tramData from '../components/tram_segmentstwo.json';
+import { useRouter } from 'next/navigation'; // App Router
 
 const statusColors = {
   green: 'green',
@@ -19,7 +19,6 @@ const getRandomStatus = () => {
   return keys[Math.floor(Math.random() * keys.length)];
 };
 
-// Component to auto-fit bounds
 const FitBounds = ({ bounds }) => {
   const map = useMap();
   useEffect(() => {
@@ -34,6 +33,7 @@ const TramMap = () => {
   const [stations, setStations] = useState([]);
   const [lineSegments, setLineSegments] = useState([]);
   const [bounds, setBounds] = useState([]);
+  const router = useRouter(); // 🔁 Next.js router
 
   useEffect(() => {
     const nodes = tramData.elements.filter(el => el.type === 'node' && el.tags?.railway === 'tram_stop');
@@ -46,11 +46,9 @@ const TramMap = () => {
 
     setStations(stationWithStatus);
 
-    // Calculate map bounds
     const stationCoords = stationWithStatus.map(s => [s.lat, s.lon]);
     setBounds(stationCoords);
 
-    // Line segments between tram stops
     const segments = [];
 
     relations.forEach(rel => {
@@ -64,7 +62,9 @@ const TramMap = () => {
         const to = members[i + 1];
         segments.push({
           coords: [[from.lat, from.lon], [to.lat, to.lon]],
-          color: statusColors[getRandomStatus()]
+          color: statusColors[getRandomStatus()],
+          from,
+          to
         });
       }
     });
@@ -74,13 +74,12 @@ const TramMap = () => {
 
   return (
     <MapContainer
-      center={[35.6971, -0.6308]} // Fallback
+      center={[35.6971, -0.6308]}
       zoom={13}
       scrollWheelZoom={true}
       style={{ height: '100vh', width: '100%' }}
     >
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
       <FitBounds bounds={bounds} />
 
       {stations.map((station, i) => (
@@ -114,27 +113,30 @@ const TramMap = () => {
       ))}
 
       {lineSegments.map((seg, i) => (
-        <Polyline key={i} positions={seg.coords} color={seg.color} weight={5} />
+        <Polyline
+          key={i}
+          positions={seg.coords}
+          color={seg.color}
+          weight={5}
+          eventHandlers={{
+            click: () => {
+              localStorage.setItem('selectedStations', JSON.stringify({
+                from: {
+                  id: seg.from.id,
+                  status: seg.from.status
+                },
+                to: {
+                  id: seg.to.id,
+                  status: seg.to.status
+                }
+              }));
+             // ✅ use Next.js routing
+            }
+          }}
+        />
       ))}
     </MapContainer>
   );
 };
 
 export default TramMap;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

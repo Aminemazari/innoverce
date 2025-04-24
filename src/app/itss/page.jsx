@@ -38,7 +38,7 @@ export default function ITSSPage() {
               Explore all the traffic light intersections in Oran through an interactive map. Click on each intersection
               to view detailed information about the traffic signals and their operations in real time.
             </p>
-            <button className="bg-[#3466af] text-white px-6 py-2 rounded font-medium uppercase">CLICK HERE</button>
+            <Link href="/itss/visualisation" className="bg-[#3466af] text-white px-6 py-2 rounded font-medium uppercase">CLICK HERE</Link>
           </div>
           <div>
             <Image
@@ -59,7 +59,7 @@ export default function ITSSPage() {
               Our simulation demonstrates the real-world impact of ITSS, showcasing how our system improves traffic
               efficiency and safety compared to traditional traffic management methods.
             </p>
-            <button className="bg-[#3466af] text-white px-6 py-2 rounded font-medium uppercase">CLICK HERE</button>
+            <Link href="/itss/simulation" className="bg-[#3466af] text-white px-6 py-2 rounded font-medium uppercase " >CLICK HERE</Link>
           </div>
           <div>
             <Image

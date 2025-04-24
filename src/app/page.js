@@ -53,7 +53,7 @@ export default function Home() {
                 safer, and smarter.
               </p>
               <Link
-                href="#"
+                href="/itss"
                 className="inline-block bg-[#3466af] text-white px-8 py-3 rounded font-medium uppercase text-lg"
               >
                 GET DEMO HERE
@@ -90,7 +90,7 @@ export default function Home() {
                 operators and citizens informed and safe.
               </p>
               <Link
-                href="#"
+                href="/spms"
                 className="inline-block bg-[#3466af] text-white px-8 py-3 rounded font-medium uppercase text-lg"
               >
                 GET DEMO HERE
