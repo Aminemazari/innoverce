@@ -3,21 +3,23 @@ import cv2
 import numpy as np
 from flask import Flask, request, jsonify
 from ultralytics import YOLO
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import cloudinary
 import cloudinary.uploader
 import requests
 from PIL import Image
 from io import BytesIO
 from dotenv import load_dotenv
+import torch.serialization
+
+# Add ultralytics.nn.tasks.DetectionModel to PyTorch safe globals
+torch.serialization.add_safe_globals(['ultralytics.nn.tasks.DetectionModel'])
 
 # Load environment variables
 load_dotenv()
 
 # Flask app setup
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = 'Uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Cloudinary config
@@ -27,18 +29,16 @@ cloudinary.config(
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# Load YOLO model
+# Load YOLOv8 model (auto-downloads yolov8n.pt if not cached)
 try:
-    yolo_model = YOLO('models/yolov8n.pt')  
+    yolo_model = YOLO('yolov8n.pt')  # Standard YOLOv8 nano model, auto-downloaded
 except Exception as e:
     raise Exception(f"Model loading failed: {str(e)}")
 
 # Helper to load and decode image from URL
 def load_image_from_url(url):
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         image_data = BytesIO(response.content)
@@ -47,6 +47,15 @@ def load_image_from_url(url):
         return image, "url"
     except Exception as e:
         raise ValueError(f"Image decoding failed: {str(e)}")
+
+# Helper to load static image
+def load_static_image(image_path='traffic.jpg'):
+    if not os.path.exists(image_path):
+        raise ValueError(f"Static image not found: {image_path}")
+    image = cv2.imread(image_path)
+    if image is None:
+        raise ValueError(f"Failed to load static image: {image_path}")
+    return image, "static"
 
 # Count vehicles using YOLO model
 def count_vehicles(image, model):
@@ -87,21 +96,22 @@ def itss_traffic():
         image_source = None
         cloudinary_url = None
 
+        # Process image from URL or fallback to static image
         if image_url:
             try:
                 image, image_source = load_image_from_url(image_url)
             except Exception as e:
                 return jsonify({'error': str(e)}), 400
         else:
-            image_path = 'traffic.jpg'
-            if not os.path.exists(image_path):
+            try:
+                image, image_source = load_static_image('traffic.jpg')
+            except Exception as e:
                 return jsonify({'error': 'No URL provided and fallback traffic.jpg not found'}), 400
-            image = cv2.imread(image_path)
-            image_source = "fallback"
 
         if image is None:
             return jsonify({'error': 'Failed to process image'}), 400
 
+        # Count vehicles and calculate Tg
         n_cars, results = count_vehicles(image, yolo_model)
         output = calculate_tg(n_cars, Tb, k, n_avr)
 
@@ -128,12 +138,13 @@ def itss_traffic():
             'status': 'success',
             'source': image_source,
             'result': output,
-            'image_url': image_url,
+            'image_url': image_url if image_source == "url" else None,
             'annotated_image': cloudinary_url
         }), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=True, host='0.0.0.0', port=port)
