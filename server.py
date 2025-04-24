@@ -2,7 +2,9 @@ import os
 import cv2
 import numpy as np
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from ultralytics import YOLO
+from ultralytics.nn.tasks import DetectionModel
 import cloudinary
 import cloudinary.uploader
 import requests
@@ -10,15 +12,15 @@ from PIL import Image
 from io import BytesIO
 from dotenv import load_dotenv
 import torch.serialization
-
-# Add ultralytics.nn.tasks.DetectionModel to PyTorch safe globals
-torch.serialization.add_safe_globals(['ultralytics.nn.tasks.DetectionModel'])
+from models import db
+torch.serialization.add_safe_globals([DetectionModel])
 
 # Load environment variables
 load_dotenv()
 
 # Flask app setup
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -145,6 +147,79 @@ def itss_traffic():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+#Solution 2 :
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/trams')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
+
+# Routes
+from models import db, TramRoute
+import random
+
+def generate_fake_features():
+    return [round(random.uniform(0.4, 0.8), 2) for _ in range(10)]
+
+def populate_db_if_empty():
+    if TramRoute.query.first() is None:
+        trajects = [
+            "Gare Routière Sidi Maârouf → Hai Sabah",
+            "Hai Sabah → Hai El Yasmine",
+            "Hai El Yasmine → Bd Pépinière",
+            "Bd Pépinière → Université USTO",
+            "Université USTO → Hôpital 1er Novembre",
+            "Hôpital 1er Novembre → Cité USTO",
+            "Cité USTO → Trois Cliniques",
+            "Trois Cliniques → Palais De Justice",
+            "Palais De Justice → Mosquée Ibn Badis",
+            "Mosquée Ibn Badis → Les Castors",
+            "Les Castors → Maâlem Bentayeb",
+            "Maâlem Bentayeb → Les Frères Moulay",
+            "Les Frères Moulay → Bd Colonel Ahmed Ben Abderrezak",
+            "Bd Colonel Ahmed Ben Abderrezak → Gare SNTF",
+            "Gare SNTF → Emir Abdelkader",
+            "Emir Abdelkader → Place 1er Novembre",
+            "Place 1er Novembre → Place Mokrani",
+            "Place Mokrani → Houha Tlemcen",
+            "Houha Tlemcen → M'dina El Djadida",
+            "M'dina El Djadida → Ghaouti",
+            "Ghaouti → Palais Des Sports",
+            "Palais Des Sports → Sûreté de Wilaya",
+            "Sûreté de Wilaya → Cité Universitaire Haï El Badr",
+            "Cité Universitaire Haï El Badr → Jardin Othmania",
+            "Jardin Othmania → Lycée Les Palmiers",
+            "Lycée Les Palmiers → Cité Volontaire ENSET",
+            "Cité Volontaire ENSET → Université Docteur TALEB",
+            "Université Docteur TALEB → Moulay Abdelkader",
+            "Moulay Abdelkader → Senia Centre",
+            "Senia Centre → Senia Sud",
+            "Senia Sud → Senia Université"
+        ]
+
+        for t in trajects:
+            features = generate_fake_features()
+            route = TramRoute(
+                route_name=t,
+                column1=str(features[0]),
+                column2=str(features[1]),
+                column3=str(features[2]),
+                column4=str(features[3]),
+                column5=str(features[4]),
+                column6=str(features[5]),
+                column7=str(features[6]),
+                column8=str(features[7]),
+                column9=str(features[8]),
+                column10=str(features[9])
+            )
+            db.session.add(route)
+        db.session.commit()
+        print("Database populated with tram routes.")
+
+# Initialize DB and run
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    with app.app_context():
+        db.create_all()
+        populate_db_if_empty()
+    app.run(debug=False, host='0.0.0.0', port=port)
