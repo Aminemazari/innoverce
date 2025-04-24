@@ -4,16 +4,14 @@ import numpy as np
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from ultralytics import YOLO
-from ultralytics.nn.tasks import DetectionModel
 import cloudinary
 import cloudinary.uploader
 import requests
 from PIL import Image
 from io import BytesIO
 from dotenv import load_dotenv
-import torch.serialization
-from models import db
-torch.serialization.add_safe_globals([DetectionModel])
+from models import db, TramRoute
+import random
 
 # Load environment variables
 load_dotenv()
@@ -23,6 +21,9 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/trams')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
 
 # Cloudinary config
 cloudinary.config(
@@ -147,20 +148,17 @@ def itss_traffic():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-#Solution 2 :
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/trams')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-db.init_app(app)
-
-# Routes
-from models import db, TramRoute
-import random
-
+# Fake feature generator
 def generate_fake_features():
     return [round(random.uniform(0.4, 0.8), 2) for _ in range(10)]
 
+# Placeholder predict_priority function
+def predict_priority(features):
+    # Placeholder: Returns random priority score between 0 and 1
+    # Replace with your actual model (e.g., joblib-loaded classifier)
+    return round(random.uniform(0, 1), 2)
+
+# Populate database with tram routes if empty
 def populate_db_if_empty():
     if TramRoute.query.first() is None:
         trajects = [
@@ -215,6 +213,75 @@ def populate_db_if_empty():
             db.session.add(route)
         db.session.commit()
         print("Database populated with tram routes.")
+
+# Endpoint to get tram routes with predicted priorities
+@app.route('/Maintenance/Predictions', methods=['GET'])
+def get_trajects():
+    try:
+        # Try to fetch from database
+        routes = TramRoute.query.all()
+        if routes:
+            predictions = []
+            for route in routes:
+                features = [float(getattr(route, f'column{i+1}')) for i in range(10)]
+                priority = predict_priority(features)
+                predictions.append({
+                    'route_name': route.route_name,
+                    'features': features,
+                    'priority': priority
+                })
+        else:
+            # Fallback to static traject list
+            trajects = [
+                "Gare Routière Sidi Maârouf → Hai Sabah",
+                "Hai Sabah → Hai El Yasmine",
+                "Hai El Yasmine → Bd Pépinière",
+                "Bd Pépinière → Université USTO",
+                "Université USTO → Hôpital 1er Novembre",
+                "Hôpital 1er Novembre → Cité USTO",
+                "Cité USTO → Trois Cliniques",
+                "Trois Cliniques → Palais De Justice",
+                "Palais De Justice → Mosquée Ibn Badis",
+                "Mosquée Ibn Badis → Les Castors",
+                "Les Castors → Maâlem Bentayeb",
+                "Maâlem Bentayeb → Les Frères Moulay",
+                "Les Frères Moulay → Bd Colonel Ahmed Ben Abderrezak",
+                "Bd Colonel Ahmed Ben Abderrezak → Gare SNTF",
+                "Gare SNTF → Emir Abdelkader",
+                "Emir Abdelkader → Place 1er Novembre",
+                "Place 1er Novembre → Place Mokrani",
+                "Place Mokrani → Houha Tlemcen",
+                "Houha Tlemcen → M'dina El Djadida",
+                "M'dina El Djadida → Ghaouti",
+                "Ghaouti → Palais Des Sports",
+                "Palais Des Sports → Sûreté de Wilaya",
+                "Sûreté de Wilaya → Cité Universitaire Haï El Badr",
+                "Cité Universitaire Haï El Badr → Jardin Othmania",
+                "Jardin Othmania → Lycée Les Palmiers",
+                "Lycée Les Palmiers → Cité Volontaire ENSET",
+                "Cité Volontaire ENSET → Université Docteur TALEB",
+                "Université Docteur TALEB → Moulay Abdelkader",
+                "Moulay Abdelkader → Senia Centre",
+                "Senia Centre → Senia Sud",
+                "Senia Sud → Senia Université"
+            ]
+            predictions = []
+            for t in trajects:
+                features = generate_fake_features()
+                priority = predict_priority(features)
+                predictions.append({
+                    'route_name': t,
+                    'features': features,
+                    'priority': priority
+                })
+
+        return jsonify({
+            'status': 'success',
+            'trajects': predictions
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Initialize DB and run
 if __name__ == '__main__':
