@@ -2,7 +2,6 @@ import os
 import cv2
 import numpy as np
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from ultralytics import YOLO
 import cloudinary
 import cloudinary.uploader
@@ -18,7 +17,6 @@ load_dotenv()
 
 # Flask app setup
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/trams')
@@ -215,10 +213,10 @@ def populate_db_if_empty():
         print("Database populated with tram routes.")
 
 # Endpoint to get tram routes with predicted priorities
-@app.route('/Maintenance/Predictions', methods=['GET'])
+@app.route('/Maintenance/', methods=['GET'])
 def get_trajects():
     try:
-        # Try to fetch from database
+     
         routes = TramRoute.query.all()
         if routes:
             predictions = []
@@ -231,7 +229,6 @@ def get_trajects():
                     'priority': priority
                 })
         else:
-            # Fallback to static traject list
             trajects = [
                 "Gare Routière Sidi Maârouf → Hai Sabah",
                 "Hai Sabah → Hai El Yasmine",
