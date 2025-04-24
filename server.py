@@ -18,9 +18,7 @@ load_dotenv()
 # Flask app setup
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['OUTPUT_FOLDER'] = 'outputs'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
 # Cloudinary config
 cloudinary.config(
@@ -29,12 +27,9 @@ cloudinary.config(
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# Database connection
-
-
 # Load YOLO model
 try:
-    yolo_model = YOLO('models/yolov8n.pt')  # Adjust path/model as needed
+    yolo_model = YOLO('models/yolov8n.pt')  
 except Exception as e:
     raise Exception(f"Model loading failed: {str(e)}")
 
@@ -107,21 +102,21 @@ def itss_traffic():
         if image is None:
             return jsonify({'error': 'Failed to process image'}), 400
 
-       
         n_cars, results = count_vehicles(image, yolo_model)
         output = calculate_tg(n_cars, Tb, k, n_avr)
 
-        # Annotate and save the image
-        save_path = os.path.join(app.config['OUTPUT_FOLDER'], 'annotated_traffic.jpg')
+        # Annotate the image
         annotated = results.plot()
         cv2.putText(annotated, f'Vehicles detected: {n_cars}', (30, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 0), 3)
-        cv2.imwrite(save_path, annotated)
 
-     
+        # Convert annotated image to bytes for Cloudinary upload
+        _, buffer = cv2.imencode('.jpg', annotated)
+        image_bytes = BytesIO(buffer)
+
         try:
             upload_result = cloudinary.uploader.upload(
-                save_path,
+                image_bytes,
                 folder="smart_mobility/itss",
                 resource_type="image"
             )
@@ -134,12 +129,11 @@ def itss_traffic():
             'source': image_source,
             'result': output,
             'image_url': image_url,
-            'annotated_image': cloudinary_url if cloudinary_url else save_path
+            'annotated_image': cloudinary_url
         }), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
