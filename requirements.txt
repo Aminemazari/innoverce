@@ -1,7 +1,8 @@
 Flask==2.1.0
 ultralytics==8.0.58
 opencv-python==4.5.5.64
-numpy==1.21.2
+numpy>=1.21,<1.26
+
 joblib==1.1.0
 psycopg2-binary==2.9.3
 cloudinary==1.25.0
