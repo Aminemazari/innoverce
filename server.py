@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from ultralytics import YOLO
 import cloudinary
 import cloudinary.uploader
@@ -17,9 +18,10 @@ load_dotenv()
 
 # Flask app setup
 app = Flask(__name__)
+CORS(app)  
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/trams')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL',os.getenv("DATABASE_URL"))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
