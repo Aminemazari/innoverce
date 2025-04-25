@@ -35,20 +35,7 @@ cloudinary.config(
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# Classifier class to allow pickle loading
-class Classifier(nn.Module):
-    def __init__(self, input_dim=25, hidden_dim=64, num_classes=3):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, num_classes)
-        )
-    
-    def forward(self, x): return self.net(x)
+
 
 # Load YOLO and classifier
 yolo_model = YOLO('yolov8n.pt')
@@ -148,7 +135,7 @@ def itss_traffic():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def generate_fake_features():
+def generate_features():
     return [round(random.uniform(0.4, 0.8), 2) for _ in range(input_dim)]
 
 def predict_priority(features):
@@ -201,7 +188,7 @@ def populate_db_if_empty():
     "Senia Sud → Senia Université"
 ]
         for t in trajects:
-            features = generate_fake_features()
+            features = generate_features()
             route = TramwayRoute(route_name=t, **{f'feature_{i+1}': str(features[i]) for i in range(input_dim)})
             db.session.add(route)
         db.session.commit()
