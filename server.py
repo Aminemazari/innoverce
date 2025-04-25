@@ -10,18 +10,21 @@ import requests
 from PIL import Image
 from io import BytesIO
 from dotenv import load_dotenv
-from models import db, TramRoute
+from models import db, TramwayRoute
 import random
+import pickle
+import torch
+import torch.nn as nn
 
 # Load environment variables
 load_dotenv()
 
 # Flask app setup
 app = Flask(__name__)
-CORS(app)  
+CORS(app)
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL',os.getenv("DATABASE_URL"))
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
@@ -32,13 +35,39 @@ cloudinary.config(
     api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
-# Load YOLOv8 model (auto-downloads yolov8n.pt if not cached)
-try:
-    yolo_model = YOLO('yolov8n.pt')  # Standard YOLOv8 nano model, auto-downloaded
-except Exception as e:
-    raise Exception(f"Model loading failed: {str(e)}")
+# Classifier class to allow pickle loading
+class Classifier(nn.Module):
+    def __init__(self, input_dim=25, hidden_dim=64, num_classes=3):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, num_classes)
+        )
+    
+    def forward(self, x): return self.net(x)
 
-# Helper to load and decode image from URL
+# Load YOLO and classifier
+yolo_model = YOLO('yolov8n.pt')
+input_dim = 25  # Matches the 25 fake features
+try:
+    with open("models/priority_classifier_model.pkl", "rb") as f:
+        model = pickle.load(f)
+    print("Model loaded successfully")
+except Exception as e:
+    print(f"Error loading model: {str(e)}")
+    raise
+
+# Ensure model is in evaluation mode
+try:
+    model.eval()
+except AttributeError:
+    print("Loaded model is not a PyTorch model. Please verify the .pkl file.")
+    raise
+
 def load_image_from_url(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -51,7 +80,6 @@ def load_image_from_url(url):
     except Exception as e:
         raise ValueError(f"Image decoding failed: {str(e)}")
 
-# Helper to load static image
 def load_static_image(image_path='traffic.jpg'):
     if not os.path.exists(image_path):
         raise ValueError(f"Static image not found: {image_path}")
@@ -60,20 +88,15 @@ def load_static_image(image_path='traffic.jpg'):
         raise ValueError(f"Failed to load static image: {image_path}")
     return image, "static"
 
-# Count vehicles using YOLO model
 def count_vehicles(image, model):
     results = model(image)[0]
     vehicle_classes = ['car', 'truck', 'bus', 'motorbike']
     n_cars = sum(1 for c in results.boxes.cls if model.names[int(c)] in vehicle_classes)
     return n_cars, results
 
-# Calculate green light time Tg
 def calculate_tg(n_cars, Tb, k, n_avr):
     base_time = Tb + k * (n_cars - n_avr)
-    if n_cars >= 2 * n_avr:
-        Tg = 0.7 * base_time
-    else:
-        Tg = base_time
+    Tg = 0.7 * base_time if n_cars >= 2 * n_avr else base_time
     return {
         'Tg': round(Tg, 2),
         'Tb': Tb,
@@ -82,7 +105,6 @@ def calculate_tg(n_cars, Tb, k, n_avr):
         'n_avr': n_avr
     }
 
-# ITSS endpoint to process traffic image
 @app.route('/itss/traffic', methods=['POST'])
 def itss_traffic():
     try:
@@ -95,47 +117,26 @@ def itss_traffic():
         k = float(data.get('k', 2))
         n_avr = float(data.get('n_avr', 9))
 
-        image = None
-        image_source = None
-        cloudinary_url = None
-
-        # Process image from URL or fallback to static image
-        if image_url:
-            try:
-                image, image_source = load_image_from_url(image_url)
-            except Exception as e:
-                return jsonify({'error': str(e)}), 400
-        else:
-            try:
-                image, image_source = load_static_image('traffic.jpg')
-            except Exception as e:
-                return jsonify({'error': 'No URL provided and fallback traffic.jpg not found'}), 400
-
+        image, image_source = (load_image_from_url(image_url) if image_url else load_static_image('traffic.jpg'))
         if image is None:
             return jsonify({'error': 'Failed to process image'}), 400
 
-        # Count vehicles and calculate Tg
         n_cars, results = count_vehicles(image, yolo_model)
         output = calculate_tg(n_cars, Tb, k, n_avr)
 
-        # Annotate the image
         annotated = results.plot()
         cv2.putText(annotated, f'Vehicles detected: {n_cars}', (30, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 0), 3)
 
-        # Convert annotated image to bytes for Cloudinary upload
         _, buffer = cv2.imencode('.jpg', annotated)
         image_bytes = BytesIO(buffer)
 
-        try:
-            upload_result = cloudinary.uploader.upload(
-                image_bytes,
-                folder="smart_mobility/itss",
-                resource_type="image"
-            )
-            cloudinary_url = upload_result['secure_url']
-        except Exception as e:
-            return jsonify({'error': f'Cloudinary upload failed: {str(e)}'}), 500
+        upload_result = cloudinary.uploader.upload(
+            image_bytes,
+            folder="smart_mobility/itss",
+            resource_type="image"
+        )
+        cloudinary_url = upload_result['secure_url']
 
         return jsonify({
             'status': 'success',
@@ -148,131 +149,78 @@ def itss_traffic():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Fake feature generator
 def generate_fake_features():
-    return [round(random.uniform(0.4, 0.8), 2) for _ in range(10)]
+    return [round(random.uniform(0.4, 0.8), 2) for _ in range(input_dim)]
 
-# Placeholder predict_priority function
 def predict_priority(features):
-    # Placeholder: Returns random priority score between 0 and 1
-    # Replace with your actual model (e.g., joblib-loaded classifier)
-    return round(random.uniform(0, 1), 2)
+    # Convert features to PyTorch tensor
+    features_tensor = torch.tensor(features, dtype=torch.float32).reshape(1, -1)
+    
+    # Get model prediction (logits)
+    with torch.no_grad():
+        logits = model(features_tensor)
+    
+    # Apply softmax to get probabilities
+    probs = torch.softmax(logits, dim=1).numpy()[0]
+    
+    # Return probability of the highest priority class (assuming last class is "High")
+    return round(float(probs[-1]), 2)
 
-# Populate database with tram routes if empty
 def populate_db_if_empty():
-    if TramRoute.query.first() is None:
+    if TramwayRoute.query.first() is None:
         trajects = [
-            "Gare Routière Sidi Maârouf → Hai Sabah",
-            "Hai Sabah → Hai El Yasmine",
-            "Hai El Yasmine → Bd Pépinière",
-            "Bd Pépinière → Université USTO",
-            "Université USTO → Hôpital 1er Novembre",
-            "Hôpital 1er Novembre → Cité USTO",
-            "Cité USTO → Trois Cliniques",
-            "Trois Cliniques → Palais De Justice",
-            "Palais De Justice → Mosquée Ibn Badis",
-            "Mosquée Ibn Badis → Les Castors",
-            "Les Castors → Maâlem Bentayeb",
-            "Maâlem Bentayeb → Les Frères Moulay",
-            "Les Frères Moulay → Bd Colonel Ahmed Ben Abderrezak",
-            "Bd Colonel Ahmed Ben Abderrezak → Gare SNTF",
-            "Gare SNTF → Emir Abdelkader",
-            "Emir Abdelkader → Place 1er Novembre",
-            "Place 1er Novembre → Place Mokrani",
-            "Place Mokrani → Houha Tlemcen",
-            "Houha Tlemcen → M'dina El Djadida",
-            "M'dina El Djadida → Ghaouti",
-            "Ghaouti → Palais Des Sports",
-            "Palais Des Sports → Sûreté de Wilaya",
-            "Sûreté de Wilaya → Cité Universitaire Haï El Badr",
-            "Cité Universitaire Haï El Badr → Jardin Othmania",
-            "Jardin Othmania → Lycée Les Palmiers",
-            "Lycée Les Palmiers → Cité Volontaire ENSET",
-            "Cité Volontaire ENSET → Université Docteur TALEB",
-            "Université Docteur TALEB → Moulay Abdelkader",
-            "Moulay Abdelkader → Senia Centre",
-            "Senia Centre → Senia Sud",
-            "Senia Sud → Senia Université"
-        ]
-
+    "Gare Routière Sidi Maârouf → Hai Sabah",
+    "Hai Sabah → Hai El Yasmine",
+    "Hai El Yasmine → Bd Pépinière",
+    "Bd Pépinière → Université USTO",
+    "Université USTO → Hôpital 1er Novembre",
+    "Hôpital 1er Novembre → Cité USTO",
+    "Cité USTO → Trois Cliniques",
+    "Trois Cliniques → Palais De Justice",
+    "Palais De Justice → Mosquée Ibn Badis",
+    "Mosquée Ibn Badis → Les Castors",
+    "Les Castors → Maâlem Bentayeb",
+    "Maâlem Bentayeb → Les Frères Moulay",
+    "Les Frères Moulay → Bd Colonel Ahmed Ben Abderrezak",
+    "Bd Colonel Ahmed Ben Abderrezak → Gare SNTF",
+    "Gare SNTF → Emir Abdelkader",
+    "Emir Abdelkader → Place 1er Novembre",
+    "Place 1er Novembre → Place Mokrani",
+    "Place Mokrani → Houha Tlemcen",
+    "Houha Tlemcen → M'dina El Djadida",
+    "M'dina El Djadida → Ghaouti",
+    "Ghaouti → Palais Des Sports",
+    "Palais Des Sports → Sûreté de Wilaya",
+    "Sûreté de Wilaya → Cité Universitaire Haï El Badr",
+    "Cité Universitaire Haï El Badr → Jardin Othmania",
+    "Jardin Othmania → Lycée Les Palmiers",
+    "Lycée Les Palmiers → Cité Volontaire ENSET",
+    "Cité Volontaire ENSET → Université Docteur TALEB",
+    "Université Docteur TALEB → Moulay Abdelkader",
+    "Moulay Abdelkader → Senia Centre",
+    "Senia Centre → Senia Sud",
+    "Senia Sud → Senia Université"
+]
         for t in trajects:
             features = generate_fake_features()
-            route = TramRoute(
-                route_name=t,
-                column1=str(features[0]),
-                column2=str(features[1]),
-                column3=str(features[2]),
-                column4=str(features[3]),
-                column5=str(features[4]),
-                column6=str(features[5]),
-                column7=str(features[6]),
-                column8=str(features[7]),
-                column9=str(features[8]),
-                column10=str(features[9])
-            )
+            route = TramwayRoute(route_name=t, **{f'feature_{i+1}': str(features[i]) for i in range(input_dim)})
             db.session.add(route)
         db.session.commit()
         print("Database populated with tram routes.")
 
-# Endpoint to get tram routes with predicted priorities
 @app.route('/Maintenance/', methods=['GET'])
 def get_trajects():
     try:
-     
-        routes = TramRoute.query.all()
-        if routes:
-            predictions = []
-            for route in routes:
-                features = [float(getattr(route, f'column{i+1}')) for i in range(10)]
-                priority = predict_priority(features)
-                predictions.append({
-                    'route_name': route.route_name,
-                    'features': features,
-                    'priority': priority
-                })
-        else:
-            trajects = [
-                "Gare Routière Sidi Maârouf → Hai Sabah",
-                "Hai Sabah → Hai El Yasmine",
-                "Hai El Yasmine → Bd Pépinière",
-                "Bd Pépinière → Université USTO",
-                "Université USTO → Hôpital 1er Novembre",
-                "Hôpital 1er Novembre → Cité USTO",
-                "Cité USTO → Trois Cliniques",
-                "Trois Cliniques → Palais De Justice",
-                "Palais De Justice → Mosquée Ibn Badis",
-                "Mosquée Ibn Badis → Les Castors",
-                "Les Castors → Maâlem Bentayeb",
-                "Maâlem Bentayeb → Les Frères Moulay",
-                "Les Frères Moulay → Bd Colonel Ahmed Ben Abderrezak",
-                "Bd Colonel Ahmed Ben Abderrezak → Gare SNTF",
-                "Gare SNTF → Emir Abdelkader",
-                "Emir Abdelkader → Place 1er Novembre",
-                "Place 1er Novembre → Place Mokrani",
-                "Place Mokrani → Houha Tlemcen",
-                "Houha Tlemcen → M'dina El Djadida",
-                "M'dina El Djadida → Ghaouti",
-                "Ghaouti → Palais Des Sports",
-                "Palais Des Sports → Sûreté de Wilaya",
-                "Sûreté de Wilaya → Cité Universitaire Haï El Badr",
-                "Cité Universitaire Haï El Badr → Jardin Othmania",
-                "Jardin Othmania → Lycée Les Palmiers",
-                "Lycée Les Palmiers → Cité Volontaire ENSET",
-                "Cité Volontaire ENSET → Université Docteur TALEB",
-                "Université Docteur TALEB → Moulay Abdelkader",
-                "Moulay Abdelkader → Senia Centre",
-                "Senia Centre → Senia Sud",
-                "Senia Sud → Senia Université"
-            ]
-            predictions = []
-            for t in trajects:
-                features = generate_fake_features()
-                priority = predict_priority(features)
-                predictions.append({
-                    'route_name': t,
-                    'features': features,
-                    'priority': priority
-                })
+        routes = TramwayRoute.query.all()
+        predictions = []
+        for route in routes:
+            features = [float(getattr(route, f'column{i+1}')) for i in range(input_dim)]
+            priority = predict_priority(features)
+            predictions.append({
+                'route_name': route.route_name,
+                'features': features,
+                'priority': priority
+            })
 
         return jsonify({
             'status': 'success',
@@ -282,7 +230,6 @@ def get_trajects():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Initialize DB and run
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     with app.app_context():
