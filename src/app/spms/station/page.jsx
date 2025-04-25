@@ -1,7 +1,6 @@
 import Image from "next/image"
 import Link from "next/link"
 
-// This would typically come from a database or API
 const getStationData = () => {
    
    console.log(data)
