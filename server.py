@@ -138,19 +138,19 @@ def itss_traffic():
 def generate_features():
     return [round(random.uniform(0.4, 0.8), 2) for _ in range(input_dim)]
 
-def predict_priority(features):
-    # Convert features to PyTorch tensor
-    features_tensor = torch.tensor(features, dtype=torch.float32).reshape(1, -1)
+# def predict_priority(features):
+#     # Convert features to PyTorch tensor
+#     features_tensor = torch.tensor(features, dtype=torch.float32).reshape(1, -1)
     
-    # Get model prediction (logits)
-    with torch.no_grad():
-        logits = model(features_tensor)
+#     # Get model prediction (logits)
+#     with torch.no_grad():
+#       #  logits = model(features_tensor)
     
-    # Apply softmax to get probabilities
-    probs = torch.softmax(logits, dim=1).numpy()[0]
+#     # Apply softmax to get probabilities
+#    # probs = torch.softmax(logits, dim=1).numpy()[0]
     
-    # Return probability of the highest priority class (assuming last class is "High")
-    return round(float(probs[-1]), 2)
+#     # Return probability of the highest priority class (assuming last class is "High")
+#    # return round(float(probs[-1]), 2)
 
 def populate_db_if_empty():
     if TramwayRoute.query.first() is None:
