@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import Footer from "@/app/components/footer";
+import Footer from "../../components/footer"
 import minilogo from "../../../../public/minilogo.svg";
 
-const TrafficMap = dynamic(() => import("@/app/components/trafficmap"), {
+const TrafficMap = dynamic(() => import("../../components/trafficmap"), {
   ssr: false, // Disable server-side rendering
 });
 

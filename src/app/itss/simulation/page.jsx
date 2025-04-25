@@ -5,7 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { Plus, Minus, Loader2 } from "lucide-react"
 import simulationImage from "../../../../public/notaction.svg"
-import Footer from "@/app/components/footer"
+import Footer from "../../components/footer"
 import minilogo from "../../../../public/minilogo.svg"
 export default function SimulationPage() {
   const [numCars, setNumCars] = useState(100)
