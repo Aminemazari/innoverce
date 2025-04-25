@@ -53,20 +53,19 @@ class Classifier(nn.Module):
 # Load YOLO and classifier
 yolo_model = YOLO('yolov8n.pt')
 input_dim = 25  # Matches the 25 fake features
-try:
-    with open("models/priority_classifier_model.pkl", "rb") as f:
-        model = pickle.load(f)
-    print("Model loaded successfully")
-except Exception as e:
-    print(f"Error loading model: {str(e)}")
-    raise
+# try:
+#     with open("models/priority_classifier_model.pkl", "rb") as f:
+#     ```model = pickle.load(f)
+#     print("Model loaded successfully")
+# except Exception as e:
+#     print(f"Error loading model: {str(e)}")
+#     raise
 
-# Ensure model is in evaluation mode
-try:
-    model.eval()
-except AttributeError:
-    print("Loaded model is not a PyTorch model. Please verify the .pkl file.")
-    raise
+# try:
+#     model.eval()
+# except AttributeError:
+#     print("Loaded model is not a PyTorch model. Please verify the .pkl file.")
+#     raise
 
 def load_image_from_url(url):
     try:
